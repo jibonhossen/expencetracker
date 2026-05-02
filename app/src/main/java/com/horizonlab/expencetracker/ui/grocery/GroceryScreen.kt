@@ -55,7 +55,6 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.horizonlab.expencetracker.data.entity.GroceryEntity
 
-private val groceryTags = listOf("Produce", "Dairy", "Meat", "Pantry", "Frozen", "Other")
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -63,8 +62,10 @@ fun GroceryScreen(
     viewModel: GroceryViewModel = hiltViewModel()
 ) {
     val groceries by viewModel.groceries.collectAsState()
+    val tags by viewModel.tags.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var showPriceDialog by remember { mutableStateOf<GroceryEntity?>(null) }
+    var groceryToDelete by remember { mutableStateOf<GroceryEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -123,7 +124,7 @@ fun GroceryScreen(
                                 viewModel.uncompleteGrocery(grocery)
                             }
                         },
-                        onDelete = { viewModel.deleteGrocery(grocery) }
+                        onDelete = { groceryToDelete = grocery }
                     )
                 }
                 item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -134,7 +135,7 @@ fun GroceryScreen(
     // ── Add Grocery Dialog ────────────────────────────────
     if (showAddDialog) {
         var itemName by remember { mutableStateOf("") }
-        var selectedTag by remember { mutableStateOf("Other") }
+        var categoryName by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showAddDialog = false },
@@ -149,21 +150,33 @@ fun GroceryScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        "Category",
-                        style = MaterialTheme.typography.labelMedium
+                    OutlinedTextField(
+                        value = categoryName,
+                        onValueChange = { categoryName = it },
+                        label = { Text("Category (e.g. Produce, Meat)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        groceryTags.forEach { tag ->
-                            FilterChip(
-                                selected = tag == selectedTag,
-                                onClick = { selectedTag = tag },
-                                label = { Text(tag) }
-                            )
+                    
+                    if (tags.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "Suggestions",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            tags.forEach { tag ->
+                                FilterChip(
+                                    selected = categoryName == tag,
+                                    onClick = { categoryName = tag },
+                                    label = { Text(tag) }
+                                )
+                            }
                         }
                     }
                 }
@@ -171,8 +184,8 @@ fun GroceryScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        if (itemName.isNotBlank()) {
-                            viewModel.addGrocery(itemName.trim(), selectedTag)
+                        if (itemName.isNotBlank() && categoryName.isNotBlank()) {
+                            viewModel.addGrocery(itemName.trim(), categoryName.trim())
                             showAddDialog = false
                         }
                     }
@@ -232,6 +245,30 @@ fun GroceryScreen(
             }
         )
     }
+
+    // ── Delete Confirmation Dialog ────────────────────────
+    groceryToDelete?.let { grocery ->
+        AlertDialog(
+            onDismissRequest = { groceryToDelete = null },
+            title = { Text("Delete Item") },
+            text = { Text("Are you sure you want to delete \"${grocery.name}\"?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteGrocery(grocery)
+                        groceryToDelete = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { groceryToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -245,7 +282,7 @@ private fun GroceryItem(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
                 onDelete()
-                true
+                false // Snaps back, dialog will handle the actual deletion
             } else {
                 false
             }
@@ -269,11 +306,13 @@ private fun GroceryItem(
                     .padding(end = 20.dp),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.onErrorContainer
-                )
+                if (dismissState.progress > 0.1f) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
             }
         },
         enableDismissFromStartToEnd = false
@@ -282,7 +321,7 @@ private fun GroceryItem(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
                 containerColor = if (grocery.isCompleted)
-                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    MaterialTheme.colorScheme.surfaceVariant
                 else
                     MaterialTheme.colorScheme.surfaceVariant
             )

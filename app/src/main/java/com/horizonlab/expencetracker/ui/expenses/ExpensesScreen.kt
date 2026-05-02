@@ -70,6 +70,7 @@ fun ExpensesScreen(
     val expenses by viewModel.expenses.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
     var editingExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
+    var expenseToDelete by remember { mutableStateOf<ExpenseEntity?>(null) }
 
     Scaffold(
         topBar = {
@@ -122,7 +123,7 @@ fun ExpensesScreen(
                     ExpenseItem(
                         expense = expense,
                         onEdit = { editingExpense = expense },
-                        onDelete = { viewModel.deleteExpense(expense) }
+                        onDelete = { expenseToDelete = expense }
                     )
                 }
                 item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -159,6 +160,30 @@ fun ExpensesScreen(
                     )
                 )
                 editingExpense = null
+            }
+        )
+    }
+
+    // ── Delete Confirmation Dialog ────────────────────────
+    expenseToDelete?.let { expense ->
+        AlertDialog(
+            onDismissRequest = { expenseToDelete = null },
+            title = { Text("Delete Expense") },
+            text = { Text("Are you sure you want to delete this expense of $${expense.amount}?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteExpense(expense)
+                        expenseToDelete = null
+                    }
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { expenseToDelete = null }) {
+                    Text("Cancel")
+                }
             }
         )
     }
@@ -269,7 +294,7 @@ private fun ExpenseItem(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
                 onDelete()
-                true
+                false // Snaps back, dialog will handle the actual deletion
             } else {
                 false
             }
@@ -293,11 +318,13 @@ private fun ExpenseItem(
                     .padding(end = 20.dp),
                 contentAlignment = Alignment.CenterEnd
             ) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.onErrorContainer
-                )
+                if (dismissState.progress > 0.1f) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete",
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
             }
         },
         enableDismissFromStartToEnd = false
